@@ -1,0 +1,5 @@
+# Pipeline de traduccion Deltarune ES-CL
+# patcher.py  -> detools (aplicar parche binario de data.win, Cap.2+)
+# builder.py  -> openpyxl (leer/escribir .xlsx del Sheet), detools (crear parche)
+detools>=0.53
+openpyxl>=3.1

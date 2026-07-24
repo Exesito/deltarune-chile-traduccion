@@ -21,8 +21,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Instalar PyInstaller
-        run: pip install pyinstaller
+      - name: Instalar PyInstaller y dependencias del patcher
+        run: pip install pyinstaller detools
 
       - name: Compilar patcher.exe
         working-directory: scripts
@@ -43,5 +43,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             scripts/out/patcher-deltarune-cl.exe \
             --title "$GITHUB_REF_NAME" \
-            --notes "Parche de traducción ES-CL para Deltarune Cap.1. Descarga el .exe, ábrelo, ubica el juego y dale a PARCHAR." \
+            --notes "Parche de traducción ES-CL para Deltarune. Descarga el .exe, ábrelo, elige el capítulo, ubica el juego y dale a PARCHAR." \
           || gh release upload "$GITHUB_REF_NAME" scripts/out/patcher-deltarune-cl.exe --clobber
