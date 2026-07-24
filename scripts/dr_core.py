@@ -239,7 +239,11 @@ def fetch_bytes(url: str, allowed_hosts: set = None, allow_any_host: bool = Fals
 # Conector al Google Sheet (lado BUILDER, link publico solo-lectura)
 # --------------------------------------------------------------------------- #
 def sheet_csv_url(sheet_url_or_id: str, gid: str = "0") -> str:
-    """Construye la URL de export CSV desde una URL de Sheet o un ID pelado."""
+    """
+    Construye la URL de export CSV desde una URL de Sheet o un ID pelado.
+    Usa el endpoint gviz (docs.google.com, sin redirect a googleusercontent):
+    mas confiable que /export?format=csv, que a veces devuelve 400 en su redirect.
+    """
     m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", sheet_url_or_id)
     sheet_id = m.group(1) if m else sheet_url_or_id.strip()
     g = re.search(r"[#?&]gid=(\d+)", sheet_url_or_id)
@@ -247,7 +251,7 @@ def sheet_csv_url(sheet_url_or_id: str, gid: str = "0") -> str:
         gid = g.group(1)
     return (
         f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-        f"/export?format=csv&gid={gid}"
+        f"/gviz/tq?tqx=out:csv&gid={gid}"
     )
 
 
