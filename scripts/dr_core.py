@@ -40,8 +40,8 @@ MAX_ENTRIES = 200_000                        # tope de claves razonable para Cap
 # Codigos de control de GameMaker que deben conservarse identicos entre en y cl.
 #   \cY \cW ...  -> color (\c + 1 letra); el texto que sigue NO es parte del codigo
 #   \M0 \E1 \R   -> codigo (\ + 1 letra + digitos opcionales)
-#   ^6           -> timing/pausa      & -> salto de linea     % -> fin
-_CODE_RE = re.compile(r"\\c[A-Za-z]|\\[A-Za-z]\d*|\^\d|[&%]")
+#   ^6           -> timing/pausa   & -> salto de linea   # -> salto de linea   % -> fin
+_CODE_RE = re.compile(r"\\c[A-Za-z]|\\[A-Za-z]\d*|\^\d|[&%#]")
 
 
 class SecurityError(Exception):

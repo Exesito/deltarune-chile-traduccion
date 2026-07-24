@@ -101,8 +101,8 @@ Release en vez del repo: `builder.py data ... --release vX.Y.Z` y luego
   (lo pone `extract`). No lo cambies: el `import` reinyecta por ese índice.
 
 **Códigos de control** que deben quedar idénticos entre `en` y `cl` (el builder
-avisa si se rompen): `^6` (pausa), `\M0` (cara), `\cY` (color), `&` (salto de
-línea), `%` (fin de texto).
+avisa si se rompen): `^6` (pausa), `\M0` (cara), `\cY` (color), `&` y `#` (salto
+de línea), `%` (fin de texto).
 
 > Seguridad Cap.2+: `import_strings.csx` **nunca** reescribe strings usados como
 > nombres internos (objetos, sprites, scripts, rooms, variables…), aunque queden

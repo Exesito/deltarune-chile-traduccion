@@ -10,6 +10,11 @@ outputs/
 scripts/*.xlsx
 scripts/*.csv
 
+# Semillas generadas por `builder.py extract`: contienen el guion en ingles
+# completo del juego (copyright). Solo sirven para sembrar el Sheet privado y
+# son regenerables desde el data.win local. NO se publican.
+sheets/
+
 # Empaquetado
 build/
 *.spec
