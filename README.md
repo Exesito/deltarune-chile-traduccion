@@ -35,10 +35,10 @@ tipo `text`; `image` / `font` / `data` se agregarán sin rehacer el flujo.
 ## Para USAR la traducción (jugadores)
 
 ### Opción A — GUI (recomendado)
-1. Descarga `patcher.py` (o el `.exe` en *Releases*, si está disponible).
-2. Ábrelo. Elige **"Desde el repo (GitHub)"**.
-3. Selecciona la carpeta donde tienes instalado Deltarune (Capítulo 1).
-4. **Descargar y parchar**. Para volver al inglés: **Restaurar original**.
+1. Descarga `patcher.py` (o el `.exe` en *Releases*, si está disponible) y ábrelo.
+2. Intenta **auto-detectar** el juego; si no lo halla, botón **Ubicar juego...**.
+3. Un solo botón: **♥ PARCHAR AL ESPAÑOL**.
+4. Para volver al inglés: link **restaurar original** (abajo).
 
 ### Opción B — línea de comandos
 ```bash

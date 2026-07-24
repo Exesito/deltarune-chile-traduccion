@@ -161,141 +161,96 @@ def _dr_button(parent, text, cmd):
 
 def launch_gui():
     import tkinter as tk
-    from tkinter import filedialog, messagebox, scrolledtext
+    from tkinter import filedialog, messagebox
 
     root = tk.Tk()
     root.title("DELTARUNE  -  Parche ES-CL")
     root.configure(bg=BG)
-    root.geometry("780x600")
+    root.geometry("560x420")
+    root.minsize(520, 400)
 
-    src_mode = tk.StringVar(value="repo")
-    owner_v = tk.StringVar(value=REPO_OWNER)
-    repo_v = tk.StringVar(value=REPO_NAME)
-    branch_v = tk.StringVar(value=REPO_BRANCH)
-    chapter_v = tk.StringVar(value=str(DEFAULT_CHAPTER))
-    file_v = tk.StringVar()
     game_v = tk.StringVar(value=autodetect_game())
+    status_v = tk.StringVar()
 
-    def L(parent, text, **kw):
-        return tk.Label(parent, text=text, bg=BG, fg=FG, font=MONO, **kw)
-
-    def E(parent, var, width=24):
-        return tk.Entry(parent, textvariable=var, width=width, bg="#0a0a0a", fg=FG,
-                        insertbackground=YELLOW, font=MONO, relief="flat",
-                        highlightthickness=1, highlightbackground="#555",
-                        highlightcolor=YELLOW)
-
-    def log(msg):
-        out.configure(state="normal")
-        out.insert("end", str(msg) + "\n")
-        out.see("end")
-        out.configure(state="disabled")
+    def set_status(msg):
+        status_v.set(msg)
+        root.update_idletasks()
 
     # --- titulo ---
-    tk.Label(root, text="♥  DELTARUNE  —  PARCHE ES-CL", bg=BG, fg=YELLOW,
-             font=TITLE_FONT).pack(pady=(14, 2))
-    L(root, "Traduccion al espanol chileno  ·  Capitulo 1").pack()
+    tk.Label(root, text="♥  DELTARUNE", bg=BG, fg=YELLOW, font=TITLE_FONT).pack(pady=(22, 0))
+    tk.Label(root, text="PARCHE  ·  ESPANOL CHILENO  ·  CAP. 1",
+             bg=BG, fg=FG, font=MONO_B).pack(pady=(2, 18))
 
-    # --- caja de dialogo (borde blanco tipo textbox) ---
+    # --- ubicar juego (caja tipo textbox) ---
     box = tk.Frame(root, bg=BG, highlightbackground=FG, highlightthickness=3)
-    box.pack(fill="x", padx=16, pady=12)
+    box.pack(fill="x", padx=22)
+    tk.Label(box, text="Carpeta del juego:", bg=BG, fg=FG, font=MONO).grid(
+        row=0, column=0, sticky="w", padx=8, pady=(8, 2))
+    game_lbl = tk.Label(box, textvariable=game_v, bg=BG, fg=YELLOW, font=MONO,
+                        anchor="w", wraplength=470, justify="left")
+    game_lbl.grid(row=1, column=0, sticky="we", padx=8, pady=(0, 8))
+    box.columnconfigure(0, weight=1)
 
-    # fuente
-    tk.Radiobutton(box, text="Desde el repo (GitHub)", variable=src_mode, value="repo",
-                   bg=BG, fg=FG, selectcolor=BG, activebackground=BG, activeforeground=YELLOW,
-                   font=MONO_B).grid(row=0, column=0, sticky="w", padx=6, pady=(6, 0))
-    repo_row = tk.Frame(box, bg=BG)
-    repo_row.grid(row=1, column=0, columnspan=4, sticky="w", padx=24)
-    L(repo_row, "usuario:").grid(row=0, column=0, sticky="w")
-    E(repo_row, owner_v, 16).grid(row=0, column=1, padx=(2, 10))
-    L(repo_row, "repo:").grid(row=0, column=2, sticky="w")
-    E(repo_row, repo_v, 16).grid(row=0, column=3, padx=(2, 10))
-    L(repo_row, "rama:").grid(row=0, column=4, sticky="w")
-    E(repo_row, branch_v, 10).grid(row=0, column=5, padx=(2, 10))
-    L(repo_row, "cap:").grid(row=0, column=6, sticky="w")
-    E(repo_row, chapter_v, 4).grid(row=0, column=7, padx=2)
+    def locate():
+        d = filedialog.askdirectory(title="Ubica la carpeta de Deltarune")
+        if d:
+            game_v.set(d)
+            set_status("Juego seleccionado.")
 
-    tk.Radiobutton(box, text="Archivo local (json/xlsx/csv)", variable=src_mode, value="file",
-                   bg=BG, fg=FG, selectcolor=BG, activebackground=BG, activeforeground=YELLOW,
-                   font=MONO_B).grid(row=2, column=0, sticky="w", padx=6, pady=(8, 0))
-    file_row = tk.Frame(box, bg=BG)
-    file_row.grid(row=3, column=0, columnspan=4, sticky="we", padx=24, pady=(0, 6))
-    E(file_row, file_v, 44).grid(row=0, column=0, sticky="we")
-    _dr_button(file_row, "Examinar...",
-               lambda: file_v.set(filedialog.askopenfilename(
-                   filetypes=[("Traduccion", "*.json *.xlsx *.csv")]) or file_v.get())
-               ).grid(row=0, column=1, padx=6)
+    _dr_button(box, "Ubicar juego...", locate).grid(row=0, column=1, rowspan=2, padx=8)
 
-    # juego
-    game_box = tk.Frame(root, bg=BG, highlightbackground=FG, highlightthickness=3)
-    game_box.pack(fill="x", padx=16, pady=(0, 12))
-    L(game_box, "Carpeta del juego:").grid(row=0, column=0, sticky="w", padx=6, pady=6)
-    E(game_box, game_v, 44).grid(row=0, column=1, sticky="we", pady=6)
-    game_box.columnconfigure(1, weight=1)
-    _dr_button(game_box, "Examinar...",
-               lambda: game_v.set(filedialog.askdirectory() or game_v.get())
-               ).grid(row=0, column=2, padx=4)
-    _dr_button(game_box, "Auto-detectar",
-               lambda: (game_v.set(autodetect_game() or game_v.get()),
-                        log("* Auto-deteccion: " + (game_v.get() or "no encontrado")))
-               ).grid(row=0, column=3, padx=4)
-
-    # --- acciones ---
+    # --- boton unico grande ---
     def _do_patch():
-        if not game_v.get():
-            messagebox.showwarning("Falta juego", "Selecciona la carpeta del juego.")
-            return
+        game = game_v.get()
+        if not game or not Path(game).exists():
+            locate()
+            game = game_v.get()
+            if not game:
+                return
+        big.config(state="disabled")
+        set_status("Descargando y parchando...")
         try:
-            if src_mode.get() == "repo":
-                patch_from_repo(owner_v.get(), repo_v.get(), branch_v.get(),
-                                int(chapter_v.get() or 1), game_v.get(), log=log)
-            else:
-                if not file_v.get():
-                    messagebox.showwarning("Falta archivo", "Selecciona el archivo local.")
-                    return
-                patch_from_file(file_v.get(), game_v.get(), log=log)
-            messagebox.showinfo("Listo", "Juego parchado. Abre Deltarune para probar.")
+            patch_from_repo(REPO_OWNER, REPO_NAME, REPO_BRANCH, DEFAULT_CHAPTER,
+                            game, log=set_status)
+            set_status("Listo. Abre Deltarune para jugar en espanol.")
+            messagebox.showinfo("Listo ♥", "Juego parchado.\nAbre Deltarune para probar.")
         except core.SecurityError as e:
-            log("* SEGURIDAD: " + str(e))
+            set_status("Bloqueado por seguridad.")
             messagebox.showerror("Seguridad", str(e))
         except Exception as e:
-            log("* ERROR: " + str(e))
+            set_status("Error.")
             messagebox.showerror("Error", str(e))
+        finally:
+            big.config(state="normal")
+
+    big = tk.Button(root, text="♥  PARCHAR AL ESPANOL", command=_do_patch,
+                    bg=BG, fg=YELLOW, activebackground=BG, activeforeground="#FFFFFF",
+                    font=("Courier New", 16, "bold"), bd=0, highlightthickness=3,
+                    highlightbackground=FG, highlightcolor=YELLOW, relief="flat",
+                    padx=10, pady=14, cursor="heart")
+    big.pack(fill="x", padx=22, pady=20)
+
+    # --- estado + restaurar (chico) ---
+    tk.Label(root, textvariable=status_v, bg=BG, fg="#AAAAAA", font=MONO,
+             wraplength=500).pack(pady=(0, 6))
 
     def _do_restore():
         try:
-            t = core.restore_game(Path(game_v.get()))
-            log("* Restaurado el original: " + str(t))
-            messagebox.showinfo("Listo", "Se restauro el lang_en.json original.")
+            core.restore_game(Path(game_v.get()))
+            set_status("Restaurado el ingles original.")
+            messagebox.showinfo("Listo", "Se restauro el original.")
         except Exception as e:
-            log("* ERROR: " + str(e))
             messagebox.showerror("Error", str(e))
 
-    def _do_check():
-        try:
-            base = repo_base_url(owner_v.get(), repo_v.get(), branch_v.get(),
-                                 int(chapter_v.get() or 1))
-            man = core.fetch_manifest(base)
-            log(f"* manifest OK  version={man.get('version')}  assets={len(man.get('assets', []))}")
-            for a in man.get("assets", []):
-                log(f"    - {a.get('type')}: {a.get('src')}  sha={str(a.get('sha256'))[:12]}...")
-        except Exception as e:
-            log("* ERROR verificando: " + str(e))
+    restore = tk.Label(root, text="restaurar original", bg=BG, fg="#777",
+                       font=("Courier New", 10, "underline"), cursor="hand2")
+    restore.pack(side="bottom", pady=10)
+    restore.bind("<Button-1>", lambda _: _do_restore())
 
-    btns = tk.Frame(root, bg=BG)
-    btns.pack(fill="x", padx=16)
-    _dr_button(btns, "Verificar repo", _do_check).pack(side="left", padx=4)
-    _dr_button(btns, "Descargar y parchar", _do_patch).pack(side="left", padx=4)
-    _dr_button(btns, "Restaurar original", _do_restore).pack(side="left", padx=4)
-
-    L(root, "* Registro:").pack(anchor="w", padx=18, pady=(10, 0))
-    out = scrolledtext.ScrolledText(root, state="disabled", height=13, bg="#050505",
-                                    fg=FG, insertbackground=YELLOW, font=MONO,
-                                    highlightbackground=FG, highlightthickness=2)
-    out.pack(fill="both", expand=True, padx=16, pady=(2, 14))
-
-    log("* Bienvenid@. Elige la fuente, la carpeta del juego, y dale a parchar.")
-    log("* El lang_en.json original se respalda como lang_en.json" + core.BACKUP_SUFFIX)
+    if game_v.get():
+        set_status("Juego detectado. Dale a PARCHAR.")
+    else:
+        set_status("Ubica la carpeta del juego y dale a PARCHAR.")
     root.mainloop()
 
 
