@@ -272,6 +272,25 @@ def cmd_data(args):
 
 
 # --------------------------------------------------------------------------- #
+# Subcomando: latest  (dist/latest.json -> version del patcher para auto-aviso)
+# --------------------------------------------------------------------------- #
+def cmd_latest(args):
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    url = args.patcher_url or (
+        f"https://github.com/{args.owner}/{args.repo}/releases/latest")
+    info = {"patcher_version": args.patcher_version, "patcher_url": url}
+    (out_dir / "latest.json").write_text(
+        json.dumps(info, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"Escrito {out_dir / 'latest.json'}  ->  patcher v{args.patcher_version}")
+    if args.publish:
+        _maybe_publish(args, out_dir / "latest.json", args.patcher_version)
+    else:
+        print(f"\nPara publicar:\n  git add {out_dir/'latest.json'} && "
+              f"git commit -m 'patcher v{args.patcher_version}' && git push")
+
+
+# --------------------------------------------------------------------------- #
 # Publicacion (git)
 # --------------------------------------------------------------------------- #
 def _maybe_publish(args, ch_dir, digest, extra=None):
@@ -340,6 +359,16 @@ def build_parser():
     d.add_argument("--repo", default="deltarune-chile-traduccion", help="nombre del repo (para --release)")
     d.add_argument("--publish", action="store_true", help="git add/commit/push de dist/")
     d.set_defaults(func=cmd_data)
+
+    # latest
+    la = sub.add_parser("latest", help="Actualiza dist/latest.json (version del patcher)")
+    la.add_argument("--patcher-version", required=True, help="ej. 1.0.1")
+    la.add_argument("--patcher-url", help="URL de descarga (default: releases/latest del repo)")
+    la.add_argument("--out-dir", default=str(REPO_ROOT / "dist"))
+    la.add_argument("--owner", default="Exesito")
+    la.add_argument("--repo", default="deltarune-chile-traduccion")
+    la.add_argument("--publish", action="store_true")
+    la.set_defaults(func=cmd_latest)
     return ap
 
 

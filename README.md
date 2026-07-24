@@ -66,6 +66,17 @@ El parchador respalda el original (`*.orig.bak`) antes de tocar nada, verifica e
 **SHA-256** (del artefacto y, en Cap.2+, de tu `data.win` antes y después),
 valida el esquema, y solo descarga desde GitHub por HTTPS.
 
+### Avisos de actualización
+
+Al abrir, el patcher revisa (sin bloquear la ventana) si hay novedades y lo avisa:
+
+- **Traducción nueva:** guarda en tu juego un `deltarune-cl-state.json` con la
+  versión aplicada por capítulo y la compara con la publicada en el repo.
+- **Patcher nuevo:** compara su versión con `dist/latest.json` del repo y, si hay
+  una más nueva, muestra el link de descarga.
+
+Desde la línea de comandos: `python scripts/patcher.py check --chapter 2 --game "RUTA/DELTARUNE"`.
+
 ## Para GENERAR/actualizar la traducción (mantenedor)
 
 Requiere el Sheet compartido como **"cualquiera con el link: lector"**. Para
@@ -110,7 +121,9 @@ de línea), `%` (fin de texto).
 
 ## Empaquetar el patcher para Windows (.exe)
 
-Lo hace el GitHub Action `build-windows.yml` al empujar un tag `vX.Y.Z`.
+Lo hace el GitHub Action `build-windows.yml` al empujar un tag `vX.Y.Z`. Tras
+publicar un `.exe` nuevo, sube `PATCHER_VERSION` en `patcher.py` y actualiza el
+aviso de auto-update: `python builder.py latest --patcher-version X.Y.Z --publish`.
 Manual:
 ```bash
 pip install pyinstaller detools

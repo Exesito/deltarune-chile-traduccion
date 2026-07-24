@@ -30,6 +30,10 @@ REPO_NAME = "deltarune-chile-traduccion"
 REPO_BRANCH = "main"
 DEFAULT_CHAPTER = 1
 
+# Version de ESTE patcher. El mantenedor la sube al publicar un .exe nuevo y la
+# refleja en dist/latest.json para que las copias viejas avisen que hay update.
+PATCHER_VERSION = "1.0.0"
+
 # Rutas tipicas de instalacion (para auto-detectar el juego) ---------------- #
 WIN_GUESSES = [
     r"C:\Program Files (x86)\Steam\steamapps\common\DELTARUNE",
@@ -59,6 +63,31 @@ def repo_base_url(owner, repo, branch, chapter):
     return core.github_raw_base(owner, repo, branch, f"dist/chapter{chapter}")
 
 
+def dist_base_url(owner, repo, branch):
+    return core.github_raw_base(owner, repo, branch, "dist")
+
+
+def check_updates(owner, repo, branch, chapter, game):
+    """
+    Revisa (tolerante a fallos de red) si hay traduccion nueva para el capitulo
+    y si hay una version mas nueva del patcher. Devuelve (trans, patcher, errores).
+    """
+    trans = patcher = None
+    errors = []
+    try:
+        if game and Path(game).exists():
+            trans = core.check_translation_update(
+                repo_base_url(owner, repo, branch, chapter), game, chapter)
+    except Exception as e:
+        errors.append(f"traduccion: {e}")
+    try:
+        patcher = core.check_patcher_update(
+            dist_base_url(owner, repo, branch), PATCHER_VERSION)
+    except Exception as e:
+        errors.append(f"patcher: {e}")
+    return trans, patcher, errors
+
+
 # --------------------------------------------------------------------------- #
 # Operaciones (compartidas por CLI y GUI)
 # --------------------------------------------------------------------------- #
@@ -68,6 +97,8 @@ def patch_from_repo(owner, repo, branch, chapter, game, log=print):
     manifest = core.fetch_manifest(base)
     log(f"* Version: {manifest.get('version')}  |  assets: {len(manifest.get('assets', []))}")
     results = core.apply_manifest(base, manifest, Path(game), log=log)
+    core.write_state_entry(game, chapter, core.manifest_signature(manifest),
+                           manifest.get("version"))
     log("* Listo. Aplicados: " + ", ".join(f"{t}" for t, _ in results))
     return results
 
@@ -112,6 +143,33 @@ def cli_restore(args):
         print(f"Restaurado el original: {t}")
 
 
+def cli_check(args):
+    owner, repo, branch = _parse_repo(args.repo) if args.repo else (
+        REPO_OWNER, REPO_NAME, REPO_BRANCH)
+    trans, patcher, errors = check_updates(owner, repo, branch, args.chapter, args.game)
+
+    print(f"Patcher instalado: v{PATCHER_VERSION}")
+    if patcher:
+        if patcher["update_available"]:
+            print(f"  ¡Hay patcher nuevo! v{patcher['latest']}  ->  {patcher.get('url') or '(sin url)'}")
+        else:
+            print(f"  Patcher al dia (ultimo publicado: v{patcher.get('latest')}).")
+
+    print(f"\nTraduccion Cap. {args.chapter}:")
+    if trans is None:
+        print("  (no pude revisar; ¿indicaste --game y hay red?)")
+    elif not trans["applied"]:
+        print(f"  No aplicada aun. Version publicada: {trans['repo_version']}.")
+    elif trans["update_available"]:
+        print(f"  ¡Hay traduccion nueva!  aplicada: {trans['applied_version']}  ->  "
+              f"publicada: {trans['repo_version']}")
+    else:
+        print(f"  Al dia (version {trans['repo_version']}).")
+
+    for e in errors:
+        print(f"  aviso: {e}")
+
+
 def build_parser():
     p = argparse.ArgumentParser(description="Parchador de traduccion Deltarune Cap.1")
     sub = p.add_subparsers(dest="cmd")
@@ -123,9 +181,15 @@ def build_parser():
     pa.add_argument("--game", required=True, help="Carpeta del juego o ruta a lang_en.json")
     pa.set_defaults(func=cli_patch)
 
-    r = sub.add_parser("restore", help="Restaura el lang_en.json original")
+    r = sub.add_parser("restore", help="Restaura el/los original(es) desde los backups")
     r.add_argument("--game", required=True)
     r.set_defaults(func=cli_restore)
+
+    c = sub.add_parser("check", help="Revisa si hay traduccion o patcher nuevos")
+    c.add_argument("--repo", help="usuario/repo[@branch] en GitHub")
+    c.add_argument("--chapter", type=int, default=DEFAULT_CHAPTER)
+    c.add_argument("--game", help="Carpeta del juego (para saber que version tienes aplicada)")
+    c.set_defaults(func=cli_check)
     return p
 
 
@@ -232,6 +296,7 @@ def launch_gui():
             patch_from_repo(REPO_OWNER, REPO_NAME, REPO_BRANCH, ch, game, log=set_status)
             set_status(f"Listo (Cap. {ch}). Abre Deltarune para jugar en espanol.")
             messagebox.showinfo("Listo ♥", f"Cap. {ch} parchado.\nAbre Deltarune para probar.")
+            refresh_updates()
         except core.SecurityError as e:
             set_status("Bloqueado por seguridad.")
             messagebox.showerror("Seguridad", str(e))
@@ -252,6 +317,37 @@ def launch_gui():
     tk.Label(root, textvariable=status_v, bg=BG, fg="#AAAAAA", font=MONO,
              wraplength=500).pack(pady=(0, 6))
 
+    # --- aviso de actualizaciones ---
+    import threading
+    upd_v = tk.StringVar()
+    tk.Label(root, textvariable=upd_v, bg=BG, fg=YELLOW, font=MONO,
+             wraplength=500, justify="center").pack(pady=(0, 4))
+
+    def _apply_update_ui(trans, patcher, errors):
+        msgs = []
+        if patcher and patcher["update_available"]:
+            msgs.append(f"⬆ Patcher nuevo disponible: v{patcher['latest']}")
+        if trans and trans["update_available"]:
+            msgs.append(f"⬆ Traduccion nueva para Cap. {trans['chapter']} "
+                        f"({trans['repo_version']})")
+        elif trans and trans["applied"] and trans["up_to_date"]:
+            msgs.append(f"✓ Cap. {trans['chapter']} al dia ({trans['repo_version']})")
+        upd_v.set("\n".join(msgs))
+        if patcher and patcher["update_available"] and patcher.get("url"):
+            root.title(f"DELTARUNE - Parche ES-CL  (hay v{patcher['latest']})")
+
+    def refresh_updates():
+        upd_v.set("Revisando actualizaciones...")
+
+        def work():
+            res = check_updates(REPO_OWNER, REPO_NAME, REPO_BRANCH,
+                                chapter_v.get(), game_v.get())
+            root.after(0, lambda: _apply_update_ui(*res))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    chapter_v.trace_add("write", lambda *_: refresh_updates())
+
     def _do_restore():
         try:
             restored = core.restore_all_backups(Path(game_v.get()))
@@ -269,6 +365,7 @@ def launch_gui():
         set_status("Juego detectado. Dale a PARCHAR.")
     else:
         set_status("Ubica la carpeta del juego y dale a PARCHAR.")
+    root.after(400, refresh_updates)
     root.mainloop()
 
 

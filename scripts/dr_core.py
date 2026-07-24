@@ -509,6 +509,96 @@ def fetch_manifest(base_url: str, allow_any_host: bool = False) -> dict:
     return man
 
 
+# --------------------------------------------------------------------------- #
+# Estado local + chequeo de actualizaciones
+# --------------------------------------------------------------------------- #
+STATE_FILE = "deltarune-cl-state.json"
+
+
+def manifest_signature(manifest: dict) -> str:
+    """Firma estable de una version de traduccion (sha de los sha de sus assets)."""
+    shas = sorted((a.get("sha256") or "") for a in manifest.get("assets", []))
+    return sha256_bytes("|".join(shas).encode("utf-8"))
+
+
+def _state_path(game_path) -> Path:
+    p = Path(game_path)
+    base = p if p.is_dir() else p.parent
+    return base / STATE_FILE
+
+
+def read_state(game_path) -> dict:
+    f = _state_path(game_path)
+    if f.exists():
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def write_state_entry(game_path, chapter, signature, version) -> None:
+    st = read_state(game_path)
+    st[str(chapter)] = {
+        "signature": signature,
+        "version": version,
+        "applied": date.today().isoformat(),
+    }
+    try:
+        _state_path(game_path).write_text(
+            json.dumps(st, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError:
+        pass  # el estado es best-effort; no romper el parcheo por no poder escribirlo
+
+
+def check_translation_update(base_url, game_path, chapter, allow_any_host=False) -> dict:
+    """Compara la traduccion publicada (manifest del repo) con la aplicada localmente."""
+    manifest = fetch_manifest(base_url, allow_any_host=allow_any_host)
+    sig = manifest_signature(manifest)
+    entry = read_state(game_path).get(str(chapter))
+    applied_sig = entry.get("signature") if entry else None
+    return {
+        "chapter": chapter,
+        "repo_version": manifest.get("version"),
+        "applied_version": entry.get("version") if entry else None,
+        "applied": applied_sig is not None,
+        "up_to_date": applied_sig == sig,
+        "update_available": applied_sig is not None and applied_sig != sig,
+        "signature": sig,
+        "manifest": manifest,
+    }
+
+
+def parse_version(v: str) -> tuple:
+    """'1.2.3' -> (1,2,3); tolera basura -> (0,)."""
+    nums = re.findall(r"\d+", v or "")
+    return tuple(int(n) for n in nums) if nums else (0,)
+
+
+def version_gt(a: str, b: str) -> bool:
+    return parse_version(a) > parse_version(b)
+
+
+def check_patcher_update(dist_base_url, current_version, allow_any_host=False) -> dict:
+    """
+    Lee dist/latest.json del repo y compara la version del patcher.
+    latest.json: {"patcher_version": "1.0.1", "patcher_url": "https://.../releases"}.
+    """
+    data = fetch_bytes(urljoin(dist_base_url, "latest.json"), allow_any_host=allow_any_host)
+    try:
+        info = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise SecurityError(f"latest.json invalido: {e}")
+    latest = info.get("patcher_version")
+    return {
+        "latest": latest,
+        "current": current_version,
+        "url": info.get("patcher_url"),
+        "update_available": bool(latest) and version_gt(latest, current_version),
+    }
+
+
 def apply_manifest(base_url, manifest, game_path, reference_keys=None,
                    log=print, allow_any_host=False) -> list:
     """
