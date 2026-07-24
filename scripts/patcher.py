@@ -45,9 +45,14 @@ LINUX_GUESSES = [
 def autodetect_game():
     for g in WIN_GUESSES + [os.path.expanduser(p) for p in LINUX_GUESSES]:
         p = Path(g)
-        if p.is_dir() and list(p.rglob("lang_en.json")):
+        # Cap.1 usa lang_en.json; Cap.2+ vive en data.win
+        if p.is_dir() and (list(p.rglob("data.win")) or list(p.rglob("lang_en.json"))):
             return str(p)
     return ""
+
+
+# Capitulos que la GUI ofrece (el mantenedor amplia a medida que publica) ------ #
+AVAILABLE_CHAPTERS = [1, 2, 3, 4]
 
 
 def repo_base_url(owner, repo, branch, chapter):
@@ -102,8 +107,9 @@ def cli_patch(args):
 
 
 def cli_restore(args):
-    target = core.restore_game(Path(args.game))
-    print(f"Restaurado el original: {target}")
+    restored = core.restore_all_backups(Path(args.game))
+    for t in restored:
+        print(f"Restaurado el original: {t}")
 
 
 def build_parser():
@@ -178,8 +184,20 @@ def launch_gui():
 
     # --- titulo ---
     tk.Label(root, text="♥  DELTARUNE", bg=BG, fg=YELLOW, font=TITLE_FONT).pack(pady=(22, 0))
-    tk.Label(root, text="PARCHE  ·  ESPANOL CHILENO  ·  CAP. 1",
-             bg=BG, fg=FG, font=MONO_B).pack(pady=(2, 18))
+    tk.Label(root, text="PARCHE  ·  ESPANOL CHILENO",
+             bg=BG, fg=FG, font=MONO_B).pack(pady=(2, 12))
+
+    # --- selector de capitulo ---
+    chapter_v = tk.IntVar(value=AVAILABLE_CHAPTERS[0])
+    chrow = tk.Frame(root, bg=BG)
+    chrow.pack(pady=(0, 10))
+    tk.Label(chrow, text="Capitulo:", bg=BG, fg=FG, font=MONO).pack(side="left", padx=(0, 6))
+    om = tk.OptionMenu(chrow, chapter_v, *AVAILABLE_CHAPTERS)
+    om.config(bg=BG, fg=YELLOW, activebackground=BG, activeforeground=FG,
+              font=MONO_B, bd=0, highlightthickness=1, highlightbackground="#555",
+              relief="flat", cursor="heart")
+    om["menu"].config(bg=BG, fg=FG, activebackground=YELLOW, activeforeground=BG, font=MONO)
+    om.pack(side="left")
 
     # --- ubicar juego (caja tipo textbox) ---
     box = tk.Frame(root, bg=BG, highlightbackground=FG, highlightthickness=3)
@@ -207,13 +225,13 @@ def launch_gui():
             game = game_v.get()
             if not game:
                 return
+        ch = chapter_v.get()
         big.config(state="disabled")
-        set_status("Descargando y parchando...")
+        set_status(f"Descargando y parchando Cap. {ch}...")
         try:
-            patch_from_repo(REPO_OWNER, REPO_NAME, REPO_BRANCH, DEFAULT_CHAPTER,
-                            game, log=set_status)
-            set_status("Listo. Abre Deltarune para jugar en espanol.")
-            messagebox.showinfo("Listo ♥", "Juego parchado.\nAbre Deltarune para probar.")
+            patch_from_repo(REPO_OWNER, REPO_NAME, REPO_BRANCH, ch, game, log=set_status)
+            set_status(f"Listo (Cap. {ch}). Abre Deltarune para jugar en espanol.")
+            messagebox.showinfo("Listo ♥", f"Cap. {ch} parchado.\nAbre Deltarune para probar.")
         except core.SecurityError as e:
             set_status("Bloqueado por seguridad.")
             messagebox.showerror("Seguridad", str(e))
@@ -236,9 +254,9 @@ def launch_gui():
 
     def _do_restore():
         try:
-            core.restore_game(Path(game_v.get()))
-            set_status("Restaurado el ingles original.")
-            messagebox.showinfo("Listo", "Se restauro el original.")
+            restored = core.restore_all_backups(Path(game_v.get()))
+            set_status(f"Restaurado el original ({len(restored)} archivo/s).")
+            messagebox.showinfo("Listo", f"Se restauro el original ({len(restored)} archivo/s).")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 

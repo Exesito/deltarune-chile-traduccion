@@ -33,8 +33,9 @@ ALLOWED_HOSTS = {
 }
 # Hosts del Sheet (lado BUILDER, solo lo corre el mantenedor).
 SHEET_HOSTS = {"docs.google.com"}  # + *.googleusercontent.com via _host_ok
-MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024  # 20 MB tope duro
-MAX_ENTRIES = 200_000                  # tope de claves razonable para Cap.1
+MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024        # 20 MB tope para artefactos de texto
+MAX_PATCH_BYTES = 96 * 1024 * 1024           # 96 MB tope para parches binarios de data.win
+MAX_ENTRIES = 200_000                        # tope de claves razonable para Cap.1
 
 # Codigos de control de GameMaker que deben conservarse identicos entre en y cl.
 #   \cY \cW ...  -> color (\c + 1 letra); el texto que sigue NO es parte del codigo
@@ -217,7 +218,8 @@ def _host_ok(hostname: str, allowed: set) -> bool:
     return bool(hostname) and hostname.endswith(".googleusercontent.com")
 
 
-def fetch_bytes(url: str, allowed_hosts: set = None, allow_any_host: bool = False) -> bytes:
+def fetch_bytes(url: str, allowed_hosts: set = None, allow_any_host: bool = False,
+                max_bytes: int = MAX_DOWNLOAD_BYTES) -> bytes:
     """Descarga con HTTPS obligatorio, host en allowlist y tope de tamano."""
     allowed = ALLOWED_HOSTS if allowed_hosts is None else allowed_hosts
     parsed = urlparse(url)
@@ -228,11 +230,43 @@ def fetch_bytes(url: str, allowed_hosts: set = None, allow_any_host: bool = Fals
             f"Host no permitido: {parsed.hostname!r}. Permitidos: {sorted(allowed)}"
         )
     req = Request(url, headers={"User-Agent": "deltarune-cl-patcher"})
-    with urlopen(req, timeout=30) as resp:
-        data = resp.read(MAX_DOWNLOAD_BYTES + 1)
-    if len(data) > MAX_DOWNLOAD_BYTES:
-        raise SecurityError(f"Descarga supera el tope de {MAX_DOWNLOAD_BYTES} bytes.")
+    with urlopen(req, timeout=60) as resp:
+        data = resp.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise SecurityError(f"Descarga supera el tope de {max_bytes} bytes.")
     return data
+
+
+# --------------------------------------------------------------------------- #
+# Parche binario (data.win de Cap.2+): crear en el builder, aplicar en el patcher
+# --------------------------------------------------------------------------- #
+def create_binary_patch(old_bytes: bytes, new_bytes: bytes) -> bytes:
+    """Diff binario old -> new (bsdiff+lzma via detools). Devuelve el parche."""
+    import detools
+    from io import BytesIO
+    out = BytesIO()
+    detools.create_patch(BytesIO(old_bytes), BytesIO(new_bytes), out)
+    return out.getvalue()
+
+
+def apply_binary_patch(old_bytes: bytes, patch_bytes: bytes) -> bytes:
+    """Aplica un parche detools a old_bytes y devuelve el resultado."""
+    try:
+        import detools
+    except ImportError:
+        raise SystemExit(
+            "Falta 'detools' para aplicar el parche binario. Instala: pip install detools"
+        )
+    from io import BytesIO
+    out = BytesIO()
+    try:
+        detools.apply_patch(BytesIO(old_bytes), BytesIO(patch_bytes), out)
+    except Exception as e:
+        raise SecurityError(
+            "No se pudo aplicar el parche binario. Casi seguro tu data.win es de otra "
+            f"version del juego que la esperada por el parche. Detalle: {e}"
+        )
+    return out.getvalue()
 
 
 # --------------------------------------------------------------------------- #
@@ -325,6 +359,70 @@ def find_lang_file(game_path: Path) -> Path:
     return target
 
 
+def resolve_target_file(game_path: Path, target_rel: str) -> Path:
+    """
+    Ubica el archivo objetivo (ej. 'chapter2_windows/data.win') dentro de la
+    carpeta del juego, con contencion anti-symlink. Si game_path ya es un archivo,
+    lo usa directo. Si es carpeta, prueba la ruta relativa; si no, la busca por
+    nombre (rglob) para tolerar layouts distintos (Windows/Linux).
+    """
+    if game_path.is_file():
+        return game_path
+    if not game_path.is_dir():
+        raise FileNotFoundError(f"No existe la ruta: {game_path}")
+    if not target_rel:
+        raise FileNotFoundError("El asset no indica 'target'.")
+
+    base = game_path.resolve()
+    direct = (game_path / target_rel)
+    if direct.is_file():
+        target = direct
+    else:
+        name = Path(target_rel).name
+        candidates = list(game_path.rglob(name))
+        if not candidates:
+            raise FileNotFoundError(
+                f"No encontre '{target_rel}' (ni '{name}') dentro de {game_path}."
+            )
+        if len(candidates) == 1:
+            target = candidates[0]
+        else:
+            # Hay varios (ej. un data.win por capitulo): NO adivinar. Exigir que el
+            # token 'chapterN' del target coincida con la carpeta del candidato.
+            m = re.search(r"chapter\s*\d+", target_rel, re.IGNORECASE)
+            token = m.group(0).replace(" ", "").lower() if m else None
+            matches = [
+                c for c in candidates
+                if token and token in str(c).replace(" ", "").lower()
+            ]
+            if len(matches) == 1:
+                target = matches[0]
+            else:
+                raise SecurityError(
+                    f"Hay {len(candidates)} archivos '{name}' en el juego y no puedo "
+                    f"identificar sin ambiguedad cual corresponde a '{target_rel}'. "
+                    "Apunta directo a la carpeta del capitulo."
+                )
+    real = target.resolve()
+    if base != real and base not in real.parents:
+        raise SecurityError(
+            f"El objetivo resuelto ({real}) queda fuera de la carpeta del juego "
+            f"({base}). Posible symlink. Se aborta."
+        )
+    return target
+
+
+def patch_binary_file(target: Path, new_bytes: bytes) -> tuple:
+    """Respalda el archivo (una vez) y lo reemplaza con new_bytes."""
+    backup = target.with_suffix(target.suffix + BACKUP_SUFFIX)
+    backed_up = False
+    if not backup.exists():
+        shutil.copy2(target, backup)
+        backed_up = True
+    target.write_bytes(new_bytes)
+    return target, backup, backed_up
+
+
 def patch_game(game_path: Path, lang_data: dict) -> tuple:
     """Respalda lang_en.json (una sola vez) y lo reemplaza con la traduccion."""
     target = find_lang_file(game_path)
@@ -336,6 +434,38 @@ def patch_game(game_path: Path, lang_data: dict) -> tuple:
     with open(target, "w", encoding="utf-8") as f:
         json.dump(lang_data, f, ensure_ascii=False, indent=2)
     return target, backup, backed_up
+
+
+def restore_all_backups(game_path: Path) -> list:
+    """
+    Restaura TODO respaldo .orig.bak encontrado bajo game_path (cualquier
+    capitulo: lang_en.json.orig.bak, data.win.orig.bak, etc.). Offline, sin repo.
+    Devuelve la lista de archivos restaurados.
+    """
+    p = Path(game_path)
+    if p.is_file():
+        backups = [p.with_suffix(p.suffix + BACKUP_SUFFIX)]
+    elif p.is_dir():
+        base = p.resolve()
+        backups = []
+        for b in p.rglob("*" + BACKUP_SUFFIX):
+            if base in b.resolve().parents:  # contencion anti-symlink
+                backups.append(b)
+    else:
+        raise FileNotFoundError(f"No existe la ruta: {game_path}")
+
+    restored = []
+    for backup in backups:
+        if not backup.exists():
+            continue
+        original = backup.parent / backup.name[: -len(BACKUP_SUFFIX)]  # data.win.orig.bak -> data.win
+        shutil.copy2(backup, original)
+        restored.append(original)
+    if not restored:
+        raise FileNotFoundError(
+            f"No encontre respaldos ('*{BACKUP_SUFFIX}') bajo {game_path}. Nada que restaurar."
+        )
+    return restored
 
 
 def restore_game(game_path: Path) -> Path:
@@ -392,8 +522,9 @@ def apply_manifest(base_url, manifest, game_path, reference_keys=None,
         sha = asset.get("sha256")
         if not src:
             continue
+        cap = MAX_PATCH_BYTES if typ == "data" else MAX_DOWNLOAD_BYTES
         url = urljoin(base_url, src)
-        data = fetch_bytes(url, allow_any_host=allow_any_host)
+        data = fetch_bytes(url, allow_any_host=allow_any_host, max_bytes=cap)
         got = sha256_bytes(data)
         if sha and got.lower() != sha.strip().lower():
             raise SecurityError(
@@ -409,6 +540,26 @@ def apply_manifest(base_url, manifest, game_path, reference_keys=None,
             target, backup, backed = patch_game(game_path, obj)
             log(f"  texto aplicado -> {target}" + ("  (respaldo creado)" if backed else ""))
             results.append(("text", str(target)))
+        elif typ == "data":
+            # data = parche binario. Aplica sobre el data.win que el usuario YA tiene.
+            target = resolve_target_file(game_path, asset.get("target"))
+            old = target.read_bytes()
+            base_sha = (asset.get("base_sha256") or "").strip().lower()
+            if base_sha and sha256_bytes(old).lower() != base_sha:
+                raise SecurityError(
+                    f"Tu {target.name} no coincide con la version esperada por el parche.\n"
+                    "  Puede que el juego este actualizado/modificado, o que ya este parchado.\n"
+                    "  (Si ya parchaste antes, usa 'restaurar' primero.)"
+                )
+            new = apply_binary_patch(old, data)
+            result_sha = (asset.get("result_sha256") or "").strip().lower()
+            if result_sha and sha256_bytes(new).lower() != result_sha:
+                raise SecurityError(
+                    "El resultado del parche no coincide con el sha256 esperado. Se aborta."
+                )
+            target, backup, backed = patch_binary_file(target, new)
+            log(f"  data.win parchado -> {target}" + ("  (respaldo creado)" if backed else ""))
+            results.append(("data", str(target)))
         else:
             log(f"  asset '{typ}' aun no soportado por el patcher; se omite ({src}).")
             results.append((typ, "omitido"))
