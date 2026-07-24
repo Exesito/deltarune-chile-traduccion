@@ -40,6 +40,10 @@ import dr_core as core
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
+
+# Sheet por defecto (no se hardcodea el link en el repo): exporta DR_SHEET=<url|id>
+# en tu shell y podras omitir --sheet.  Ej: export DR_SHEET="https://docs.google.com/..."
+DEFAULT_SHEET = os.environ.get("DR_SHEET", "")
 EXPORT_CSX = SCRIPT_DIR / "utmt" / "export_strings.csx"
 IMPORT_CSX = SCRIPT_DIR / "utmt" / "import_strings.csx"
 UTMT_GUESS = Path.home() / "tools" / "utmt-cli" / "extracted" / "UndertaleModCli"
@@ -79,9 +83,18 @@ def run_utmt(cli, datafile, scripts, output=None, env=None):
 # Fuente de traduccion (Sheet o archivo)
 # --------------------------------------------------------------------------- #
 def get_table(args):
-    if args.sheet:
-        print(f"  Conectando al Sheet (CSV, gid={args.gid}) ...")
-        table = core.fetch_sheet_table(args.sheet, gid=args.gid)
+    sheet = args.sheet or (DEFAULT_SHEET if not args.input else "")
+    if sheet:
+        args.sheet = sheet
+        name = args.sheet_name
+        gid = args.gid
+        # Por defecto (sin --gid ni --sheet-name): pestana segun el subcomando.
+        if not name and gid is None:
+            dt = getattr(args, "default_tab", "")
+            name = dt.format(chapter=getattr(args, "chapter", "")) if dt else None
+        selector = f"pestana '{name}'" if name else f"gid={gid}"
+        print(f"  Conectando al Sheet ({selector}) ...")
+        table = core.fetch_sheet_table(args.sheet, gid=gid, sheet_name=name)
     elif args.input:
         print(f"  Leyendo archivo local {args.input} ...")
         table = core.load_translation(Path(args.input))
@@ -317,7 +330,8 @@ def _maybe_publish(args, ch_dir, digest, extra=None):
 def _add_source_args(p):
     g = p.add_argument_group("fuente")
     g.add_argument("--sheet", help="URL o ID del Google Sheet (link publico solo-lectura)")
-    g.add_argument("--gid", default="0", help="gid de la pestana del Sheet (default 0)")
+    g.add_argument("--sheet-name", help="Nombre de la pestana (ej. 'Cap2'). Default: 'Cap<chapter>'")
+    g.add_argument("--gid", default=None, help="gid de la pestana (alternativa a --sheet-name)")
     g.add_argument("--input", help="Alternativa: archivo descargado a mano (.xlsx/.csv/.json)")
 
 
@@ -334,7 +348,7 @@ def build_parser():
     t.add_argument("--reference", default=str(REPO_ROOT / "original_lang" / "lang_en.json"))
     t.add_argument("--strict", action="store_true")
     t.add_argument("--publish", action="store_true", help="git add/commit/push de dist/")
-    t.set_defaults(func=cmd_text)
+    t.set_defaults(func=cmd_text, default_tab="Translations")
 
     # extract
     e = sub.add_parser("extract", help="Cap.2+: data.win -> semilla CSV/xlsx para el Sheet")
@@ -358,7 +372,7 @@ def build_parser():
     d.add_argument("--owner", default="Exesito", help="owner del repo (para --release)")
     d.add_argument("--repo", default="deltarune-chile-traduccion", help="nombre del repo (para --release)")
     d.add_argument("--publish", action="store_true", help="git add/commit/push de dist/")
-    d.set_defaults(func=cmd_data)
+    d.set_defaults(func=cmd_data, default_tab="chapter{chapter}_seed")
 
     # latest
     la = sub.add_parser("latest", help="Actualiza dist/latest.json (version del patcher)")
