@@ -78,7 +78,7 @@ def load_from_xlsx(path: Path) -> dict:
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not row or row[0] is None:
             continue
-        key = str(row[0])
+        key = _key_str(row[0])
         en = row[1] if len(row) > 1 and row[1] is not None else ""
         cl = row[2] if len(row) > 2 and row[2] is not None else ""
         table[key] = {"en": str(en), "cl": str(cl)}
@@ -272,26 +272,88 @@ def apply_binary_patch(old_bytes: bytes, patch_bytes: bytes) -> bytes:
 # --------------------------------------------------------------------------- #
 # Conector al Google Sheet (lado BUILDER, link publico solo-lectura)
 # --------------------------------------------------------------------------- #
-def sheet_csv_url(sheet_url_or_id: str, gid: str = "0") -> str:
+def sheet_csv_url(sheet_url_or_id: str, gid: str = None, sheet_name: str = None) -> str:
     """
     Construye la URL de export CSV desde una URL de Sheet o un ID pelado.
     Usa el endpoint gviz (docs.google.com, sin redirect a googleusercontent):
     mas confiable que /export?format=csv, que a veces devuelve 400 en su redirect.
+
+    Selecciona la pestana por nombre (`sheet_name`, ej. 'Cap2') o por gid. Si el
+    sheet_url_or_id trae #gid=..., se respeta salvo que se pase sheet_name.
     """
+    from urllib.parse import quote
     m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", sheet_url_or_id)
     sheet_id = m.group(1) if m else sheet_url_or_id.strip()
-    g = re.search(r"[#?&]gid=(\d+)", sheet_url_or_id)
-    if g:
-        gid = g.group(1)
-    return (
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-        f"/gviz/tq?tqx=out:csv&gid={gid}"
-    )
+    base = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
+    if sheet_name:
+        return f"{base}&sheet={quote(sheet_name)}"
+    if gid is None:  # el gid explicito manda; solo si no hay, se toma el de la URL
+        g = re.search(r"[#?&]gid=(\d+)", sheet_url_or_id)
+        if g:
+            gid = g.group(1)
+    return f"{base}&gid={gid if gid is not None else '0'}"
 
 
-def fetch_sheet_table(sheet_url_or_id: str, gid: str = "0") -> dict:
-    """Baja el Sheet como CSV (link publico) -> tabla {id: {'en','cl'}}."""
-    url = sheet_csv_url(sheet_url_or_id, gid)
+def sheet_xlsx_url(sheet_url_or_id: str) -> str:
+    """URL de export del WORKBOOK completo (todas las pestanas) como xlsx."""
+    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", sheet_url_or_id)
+    sheet_id = m.group(1) if m else sheet_url_or_id.strip()
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+
+
+def _key_str(v) -> str:
+    """Normaliza el id: 84.0 -> '84' (openpyxl lee enteros como float)."""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return "" if v is None else str(v)
+
+
+def read_xlsx_tab(data: bytes, sheet_name: str) -> dict:
+    """Lee una pestana del workbook xlsx -> tabla {id: {'en','cl'}}."""
+    from io import BytesIO
+    from openpyxl import load_workbook
+    wb = load_workbook(BytesIO(data), read_only=True, data_only=True)
+    if sheet_name not in wb.sheetnames:
+        raise SystemExit(
+            f"La pestana '{sheet_name}' no existe en el Sheet.\n"
+            f"  Pestanas disponibles: {wb.sheetnames}\n"
+            "  Usa --sheet-name con uno de esos nombres."
+        )
+    ws = wb[sheet_name]
+    rows = ws.iter_rows(values_only=True)
+    header = next(rows, None) or ()
+    i_id = _pick(header, "id"); i_id = 0 if i_id is None else i_id
+    i_en = _pick(header, "en", "english", "ingles"); i_en = 1 if i_en is None else i_en
+    i_cl = _pick(header, "cl", "es", "espanol", "español", "chile"); i_cl = 2 if i_cl is None else i_cl
+    table = {}
+    for r in rows:
+        if not r or i_id >= len(r) or r[i_id] is None:
+            continue
+        key = _key_str(r[i_id])
+        if not key.strip():
+            continue
+        en = r[i_en] if i_en < len(r) and r[i_en] is not None else ""
+        cl = r[i_cl] if i_cl < len(r) and r[i_cl] is not None else ""
+        table[key] = {"en": str(en), "cl": str(cl)}
+    return table
+
+
+def fetch_sheet_table(sheet_url_or_id: str, gid: str = None, sheet_name: str = None) -> dict:
+    """
+    Baja la traduccion del Sheet (link publico) -> tabla {id: {'en','cl'}}.
+    Con sheet_name usa el workbook xlsx completo (unica forma confiable de elegir
+    una pestana entre varias). Sin nombre, usa el export CSV por gid.
+    """
+    if sheet_name:
+        data = fetch_bytes(sheet_xlsx_url(sheet_url_or_id), allowed_hosts=SHEET_HOSTS)
+        if data[:2] != b"PK":  # xlsx es un zip (empieza con 'PK')
+            raise SecurityError(
+                "El Sheet no devolvio un xlsx (¿no esta compartido como "
+                "'cualquiera con el link: lector'?)."
+            )
+        return read_xlsx_tab(data, sheet_name)
+
+    url = sheet_csv_url(sheet_url_or_id, gid=gid, sheet_name=None)
     data = fetch_bytes(url, allowed_hosts=SHEET_HOSTS)
     if data.lstrip()[:15].lower().startswith(b"<!doctype html") or b"<html" in data[:200].lower():
         raise SecurityError(
