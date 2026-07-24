@@ -1,0 +1,16 @@
+# Entorno Python
+venv/
+__pycache__/
+*.pyc
+
+# Insumos de trabajo (contienen comentarios internos del equipo; la fuente real
+# es el Google Sheet). NO se publican.
+inputs/
+outputs/
+scripts/*.xlsx
+scripts/*.csv
+
+# Empaquetado
+build/
+*.spec
+patcher.exe
