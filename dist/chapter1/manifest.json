@@ -7,9 +7,9 @@
     {
       "type": "text",
       "src": "texts/lang_cl.json",
-      "sha256": "87899471d89375af3f3d69709f19a64e696857eb0347916e30f5600daa030f99",
+      "sha256": "b4a12bc4ce9c19c2951d85676f9d38561cf09b5e0e8ae571789d406fdc24c3c4",
       "target": "lang/lang_en.json",
-      "bytes": 536873
+      "bytes": 536908
     }
   ]
 }
