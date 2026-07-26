@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "chapter": 1,
-  "version": "2026-07-24",
-  "generated": "2026-07-24",
+  "version": "2026-07-26",
+  "generated": "2026-07-26",
   "assets": [
     {
       "type": "text",
       "src": "texts/lang_cl.json",
-      "sha256": "1b99fdda283ca5076332645f5c6daf15aff5b6b3b1ad88c9ca708c99b9b4b0f4",
+      "sha256": "87899471d89375af3f3d69709f19a64e696857eb0347916e30f5600daa030f99",
       "target": "lang/lang_en.json",
-      "bytes": 536889
+      "bytes": 536873
     }
   ]
 }
